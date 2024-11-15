@@ -1,4 +1,30 @@
 from tkinter import *
+import mysql.connector
+from mysql.connector import errorcode
+
+# Conexão com o banco de dados
+conn = mysql.connector.connect(
+    host="localhost",
+    port=3306,
+    user="root",
+    password="0000",
+    database="urna"
+)
+
+cursor = conn.cursor()
+
+# Função para verificar se o usuário já votou
+def identificar_usuario(idUsuario):
+    cursor.execute("SELECT id_usuario FROM votos WHERE id_usuario = %s", (idUsuario,))
+    for _ in cursor:
+        return False
+    return True
+
+# Função para inserir o voto no banco de dados
+def votar(idUsuario, idCandidato):
+    cursor.execute("INSERT INTO votos(id_candidato, id_usuario) VALUES(%s, %s)", (idCandidato, idUsuario))
+    conn.commit()
+    return True
 
 class LoginApp:
     def __init__(self, master=None):
@@ -35,77 +61,71 @@ class LoginApp:
     # Método para verificar a senha e abrir a tela de votação
     def verificaSenha(self):
         usuario = self.nome.get()
-        senha = self.senha.get()
-        if usuario == "teste" and senha == "teste":
-            self.master.destroy()  # Fecha a tela de login
-            self.abrir_votacao()   # Abre a tela de votação
+        
+        idUsuario = int(usuario)
+        if identificar_usuario(idUsuario):
+            self.master.destroy()
+            self.abrir_votacao(idUsuario)
         else:
-            self.mensagem.config(text="Erro na autenticação", fg="red")
+            self.mensagem.config(text="Usuário já votou.", fg="red")
+        return
 
     # Método para abrir a tela de votação
-    def abrir_votacao(self):
+    def abrir_votacao(self, idUsuario):
         root_votacao = Tk()
-        VotingApp(root_votacao)
+        VotingApp(root_votacao, idUsuario)
         root_votacao.mainloop()
 
 class VotingApp:
-    def __init__(self, master=None):
+    def __init__(self, master=None, idUsuario=None):
         self.master = master
         self.master.title("Sistema de Votação")
+        self.idUsuario = idUsuario
 
+        # Definindo candidatos
         self.candidatos = {
-            1: {"nome": "Lula", "votos": 0},
-            2: {"nome": "Bolsonaro", "votos": 0},
-            3: {"nome": "Enéas Carneiro", "votos": 0}
+            1: "Lula",
+            2: "Bolsonaro",
+            3: "Enéas Carneiro"
         }
 
-        self.votos_branco = 0
-        self.votos_nulo = 0
-
         # Título da votação
-        self.titulo = Label(master, text="Vote em um dos candidatos abaixo:", font=("Arial", 12, "bold"))
+        self.titulo = Label(master, text="Digite o número do candidato:", font=("Arial", 12, "bold"))
         self.titulo.pack(pady=10)
 
-        # Botões de votação para cada candidato
-        for id_candidato, dados in self.candidatos.items():
-            botao = Button(master, text=f"Votar em {dados['nome']}", font=("Calibri", 10), command=lambda id=id_candidato: self.votar(id))
-            botao.pack(pady=5)
+        # Caixa de entrada para o número do candidato
+        self.numero_candidato = Entry(master, font=("Arial", 10))
+        self.numero_candidato.pack(pady=5)
 
-        # Botão de voto em branco
-        self.botao_branco = Button(master, text="Votar em Branco", font=("Calibri", 10), command=self.votar_branco)
-        self.botao_branco.pack(pady=5)
+        # Botão para confirmar o voto
+        self.botao_votar = Button(master, text="Votar", font=("Calibri", 10), command=self.registrar_voto)
+        self.botao_votar.pack(pady=10)
 
-        # Botão de voto nulo
-        self.botao_nulo = Button(master, text="Votar Nulo", font=("Calibri", 10), command=self.votar_nulo)
-        self.botao_nulo.pack(pady=5)
+        # Mensagem de confirmação
+        self.mensagem = Label(master, text="", font=("Arial", 10))
+        self.mensagem.pack(pady=20)
 
-        # Label para exibir os resultados
-        self.resultado_label = Label(master, text="", font=("Arial", 10))
-        self.resultado_label.pack(pady=20)
-
-        # Botão para mostrar resultados
-        self.mostrar_resultados = Button(master, text="Mostrar Resultados", font=("Calibri", 10, "bold"), command=self.exibir_resultados)
-        self.mostrar_resultados.pack(pady=10)
-
-    def votar(self, id_candidato):
-        self.candidatos[id_candidato]["votos"] += 1
-        self.resultado_label.config(text=f"Voto computado para {self.candidatos[id_candidato]['nome']}")
-
-    def votar_branco(self):
-        self.votos_branco += 1
-        self.resultado_label.config(text="Voto em Branco computado")
-
-    def votar_nulo(self):
-        self.votos_nulo += 1
-        self.resultado_label.config(text="Voto Nulo computado")
-
-    def exibir_resultados(self):
-        resultados = "\n".join([f"{dados['nome']}: {dados['votos']} votos" for dados in self.candidatos.values()])
-        resultados += f"\nBranco: {self.votos_branco} votos"
-        resultados += f"\nNulo: {self.votos_nulo} votos"
-        self.resultado_label.config(text=resultados)
+    def registrar_voto(self):
+        try:
+            id_candidato = int(self.numero_candidato.get())
+            if id_candidato in self.candidatos:
+                votar(self.idUsuario, id_candidato)
+                self.mensagem.config(text=f"Voto computado para {self.candidatos[id_candidato]}")
+            elif id_candidato == 0:
+                votar(self.idUsuario, 0)  # Voto em branco
+                self.mensagem.config(text="Voto em Branco computado")
+            else:
+                votar(self.idUsuario, -1)  # Voto nulo
+                self.mensagem.config(text="Voto Nulo computado")
+            
+            self.master.after(2000, self.master.destroy)  # Fecha a tela após 2 segundos
+        except ValueError:
+            self.mensagem.config(text="Digite um número válido.", fg="red")
 
 # Inicializa a aplicação com a tela de login
 root_login = Tk()
 LoginApp(root_login)
 root_login.mainloop()
+
+# Fecha a conexão com o banco de dados
+conn.close()
